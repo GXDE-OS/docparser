@@ -20,97 +20,390 @@
 #include <iostream>
 #include <cstring>
 #include <unordered_set>
+#include <unordered_map>
+#include <string_view>
+#include <algorithm>
+#include <magic.h>
+#include <sys/stat.h>
 
-static bool isValidSuffix(const std::unordered_set<std::string> &supportedSuffixs, const std::string &suffix)
+static bool isTextSuffix(std::string_view suffix)
 {
-    std::string lowercaseSuffix(suffix);
-    std::transform(lowercaseSuffix.begin(), lowercaseSuffix.end(), lowercaseSuffix.begin(), ::tolower);
-
-    return supportedSuffixs.count(lowercaseSuffix) > 0;
-}
-
-static bool isTextSuffix(const std::string &suffix)
-{
-    static const std::unordered_set<std::string> validSuffixes = {
+    static const std::unordered_set<std::string_view> validSuffixes = {
         "txt", "text", "md", "markdown", "sh", "html", "htm",
         "xml", "xhtml", "dhtml", "shtm", "shtml", "json",
         "css", "yaml", "ini", "bat", "js", "sql", "uof"
     };
-    return isValidSuffix(validSuffixes, suffix);
-}
-static std::string doConvertFile(const std::string &filename, const std::string &suffix)
-{
-    std::string content;
-    std::unique_ptr<fileext::FileExtension> document;
-    try {
-        // 比较后缀名，不区分大小写
-        if (!strcasecmp(suffix.c_str(), "docx")) {
-            document.reset(new docx::Docx(filename));
-        } else if (!strcasecmp(suffix.c_str(), "pptx") || !strcasecmp(suffix.c_str(), "ppsx")) {
-            document.reset(new pptx::Pptx(filename));
-        } else if (isTextSuffix(suffix)) {
-            document.reset(new txt::Txt(filename));
-        } else if (!strcasecmp(suffix.c_str(), "doc") || !strcasecmp(suffix.c_str(), "dot") || !strcasecmp(suffix.c_str(), "wps")) {
-            document.reset(new doc::Doc(filename));
-        } else if (!strcasecmp(suffix.c_str(), "rtf")) {
-            document.reset(new rtf::Rtf(filename));
-        } else if (!strcasecmp(suffix.c_str(), "odg") || !strcasecmp(suffix.c_str(), "odt") || !strcasecmp(suffix.c_str(), "ods") || !strcasecmp(suffix.c_str(), "odp")) {
-            document.reset(new odf::Odf(filename));
-        } else if (!strcasecmp(suffix.c_str(), "xls") || !strcasecmp(suffix.c_str(), "xlsx")) {
-            document.reset(new excel::Excel(filename, suffix));
-        } else if (!strcasecmp(suffix.c_str(), "xlsb")) {
-            document.reset(new xlsb::Xlsb(filename));
-        } else if (!strcasecmp(suffix.c_str(), "ppt") || !strcasecmp(suffix.c_str(), "pps") || !strcasecmp(suffix.c_str(), "dps") || !strcasecmp(suffix.c_str(), "pot")) {
-            document.reset(new ppt::Ppt(filename));
-        } else if (!strcasecmp(suffix.c_str(), "pdf")) {
-            document.reset(new pdf::Pdf(filename));
-        } else if (!strcasecmp(suffix.c_str(), "ofd")) {
-            document.reset(new ofd::Ofd(filename));
-        } else {
-            throw std::logic_error("Unsupported file extension: " + filename);
-        }
 
+    std::string lowercaseSuffix(suffix);
+    std::transform(lowercaseSuffix.begin(), lowercaseSuffix.end(), lowercaseSuffix.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    return validSuffixes.count(lowercaseSuffix) > 0;
+}
+
+/**
+ * @brief Extract and normalize file extension
+ * @param filename Path to the file
+ * @return Lowercase file extension, or empty string if no extension
+ */
+static std::string extractFileExtension(const std::string &filename)
+{
+    size_t dotPos = filename.find_last_of('.');
+    if (dotPos == std::string::npos || dotPos == filename.length() - 1) {
+        return {};
+    }
+
+    std::string suffix = filename.substr(dotPos + 1);
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return suffix;
+}
+
+/**
+ * @brief Check if a file is a text file using libmagic MIME type detection
+ * @param filename The path to the file to check
+ * @return true if the file is detected as text, false otherwise
+ */
+static bool isTextFileByMimeType(const std::string &filename)
+{
+    magic_t magic_cookie = magic_open(MAGIC_MIME_TYPE);
+    if (magic_cookie == nullptr) {
+        std::cerr << "ERROR: [isTextFileByMimeType] Failed to initialize libmagic" << std::endl;
+        return false;
+    }
+
+    if (magic_load(magic_cookie, nullptr) != 0) {
+        std::cerr << "ERROR: [isTextFileByMimeType] Failed to load magic database: "
+                  << magic_error(magic_cookie) << std::endl;
+        magic_close(magic_cookie);
+        return false;
+    }
+
+    const char *mime_type = magic_file(magic_cookie, filename.c_str());
+    if (mime_type == nullptr) {
+        std::cerr << "ERROR: [isTextFileByMimeType] Failed to detect MIME type for "
+                  << filename << ": " << magic_error(magic_cookie) << std::endl;
+        magic_close(magic_cookie);
+        return false;
+    }
+
+    std::string mimeStr(mime_type);
+    magic_close(magic_cookie);
+
+    std::cout << "INFO: [isTextFileByMimeType] Detected MIME type: " << mimeStr
+              << " for file: " << filename << std::endl;
+
+    // Check if MIME type starts with "text/"
+    bool isText = mimeStr.substr(0, 5) == "text/";
+
+    // Also consider some application types that are actually text
+    if (!isText) {
+        static const std::unordered_set<std::string> textApplicationTypes = {
+            "application/json",
+            "application/xml",
+            "application/javascript",
+            "application/x-sh",
+            "application/x-shellscript",
+            "application/x-perl",
+            "application/x-python",
+            "application/x-ruby",
+            "application/x-awk",
+            "application/x-desktop",
+            "application/x-yaml"
+        };
+
+        isText = textApplicationTypes.count(mimeStr) > 0;
+    }
+
+    return isText;
+}
+
+/**
+ * @brief Get file size in bytes
+ * @param filename Path to the file
+ * @return File size in bytes, or 0 if file doesn't exist or error occurred
+ */
+static size_t getFileSize(const std::string &filename)
+{
+    struct stat stat_buf;
+    if (stat(filename.c_str(), &stat_buf) == 0) {
+        return static_cast<size_t>(stat_buf.st_size);
+    }
+    return 0;
+}
+
+/**
+ * @brief Check if a file is small enough to use the original processing path
+ * @param filename Path to the file
+ * @param maxBytes Maximum bytes limit
+ * @return true if file is small enough that doesn't need truncation
+ */
+static bool isSmallFile(const std::string &filename, size_t maxBytes)
+{
+    // Check file size first (early exit if too large)
+    size_t fileSize = getFileSize(filename);
+    return fileSize > 0 && fileSize <= maxBytes;
+}
+
+// 预处理后缀映射，避免多次strcasecmp比较
+using FileCreator = std::unique_ptr<fileext::FileExtension> (*)(const std::string &, const std::string &);
+
+static std::unique_ptr<fileext::FileExtension> createDocx(const std::string &filename, const std::string &)
+{
+    return std::make_unique<docx::Docx>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createPptx(const std::string &filename, const std::string &)
+{
+    return std::make_unique<pptx::Pptx>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createTxt(const std::string &filename, const std::string &)
+{
+    return std::make_unique<txt::Txt>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createDoc(const std::string &filename, const std::string &)
+{
+    return std::make_unique<doc::Doc>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createRtf(const std::string &filename, const std::string &)
+{
+    return std::make_unique<rtf::Rtf>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createOdf(const std::string &filename, const std::string &)
+{
+    return std::make_unique<odf::Odf>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createExcel(const std::string &filename, const std::string &suffix)
+{
+    return std::make_unique<excel::Excel>(filename, suffix);
+}
+
+static std::unique_ptr<fileext::FileExtension> createXlsb(const std::string &filename, const std::string &)
+{
+    return std::make_unique<xlsb::Xlsb>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createPpt(const std::string &filename, const std::string &)
+{
+    return std::make_unique<ppt::Ppt>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createPdf(const std::string &filename, const std::string &)
+{
+    return std::make_unique<pdf::Pdf>(filename);
+}
+
+static std::unique_ptr<fileext::FileExtension> createOfd(const std::string &filename, const std::string &)
+{
+    return std::make_unique<ofd::Ofd>(filename);
+}
+
+// Caching the mapping of extensions to creation functions
+static const std::unordered_map<std::string, FileCreator> createExtensionMap()
+{
+    return {
+        { "docx", createDocx },
+        { "pptx", createPptx },
+        { "ppsx", createPptx },
+        { "doc", createDoc },
+        { "dot", createDoc },
+        { "wps", createDoc },
+        { "rtf", createRtf },
+        { "odg", createOdf },
+        { "odt", createOdf },
+        { "ods", createOdf },
+        { "odp", createOdf },
+        { "xls", createExcel },
+        { "xlsx", createExcel },
+        { "et", createExcel },
+        { "xlsb", createXlsb },
+        { "ppt", createPpt },
+        { "pps", createPpt },
+        { "dps", createPpt },
+        { "pot", createPpt },
+        { "pdf", createPdf },
+        { "ofd", createOfd }
+    };
+}
+
+static const std::unordered_map<std::string, std::string> createSimilarExtensionMap()
+{
+    return {
+        { "doc", "docx" },
+        { "docx", "doc" },
+        { "xls", "xlsx" },
+        { "xlsx", "xls" },
+        { "ppt", "pptx" },
+        { "pptx", "ppt" }
+    };
+}
+
+/**
+ * @brief Create parser instance for the given file
+ * @param filename Path to the file
+ * @param suffix File extension (lowercase)
+ * @return Unique pointer to FileExtension instance, or nullptr if unsupported
+ */
+static std::unique_ptr<fileext::FileExtension> createParser(const std::string &filename, const std::string &suffix)
+{
+    static const std::unordered_map<std::string, FileCreator> extensionMap = createExtensionMap();
+
+    // First check if it is a text file
+    if (isTextSuffix(suffix)) {
+        return createTxt(filename, suffix);
+    }
+
+    // Find the corresponding creation function
+    auto it = extensionMap.find(suffix);
+    if (it != extensionMap.end()) {
+        return it->second(filename, suffix);
+    }
+
+    // Extension not found in map, check if it's a text file by content
+    std::cout << "INFO: [createParser] Unknown file extension '" << suffix
+              << "', checking file content for text type: " << filename << std::endl;
+
+    if (isTextFileByMimeType(filename)) {
+        std::cout << "INFO: [createParser] File detected as text by MIME type analysis: "
+                  << filename << std::endl;
+        return createTxt(filename, suffix);
+    }
+
+    return nullptr;
+}
+
+static std::string doConvertFile(const std::string &filename, std::string suffix)
+{
+    // Convert suffix to lowercase
+    std::transform(suffix.begin(), suffix.end(), suffix.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    std::unique_ptr<fileext::FileExtension> document = createParser(filename, suffix);
+    if (!document) {
+        throw std::logic_error("Unsupported file extension: " + filename);
+    }
+
+    try {
         document->convert();
-        content = document->m_text;
+        // Use move semantics to avoid copying
+        return std::move(document->m_text);
     } catch (const std::logic_error &error) {
         std::cout << error.what() << std::endl;
     } catch (...) {
         std::cerr << "Parse failed: " << filename << std::endl;
     }
 
-    document.reset();
-    return content;
+    return {};
+}
+
+/**
+ * @brief Helper function to convert file with truncation for a given suffix
+ * @param filename Path to the file
+ * @param suffix File extension to use
+ * @param maxBytes Maximum bytes to process
+ * @return Converted text content (potentially truncated), or empty string if failed
+ */
+static std::string tryConvertWithTruncation(const std::string &filename, const std::string &suffix, size_t maxBytes)
+{
+    std::unique_ptr<fileext::FileExtension> document = createParser(filename, suffix);
+    if (!document) {
+        return {};
+    }
+
+    try {
+        // Set truncation limit
+        document->setTruncationLimit(maxBytes);
+
+        // Convert with truncation control
+        document->convert();
+
+        // Get result and add truncation marker if needed
+        std::string result = std::move(document->m_text);
+
+        // Fallback truncation: if the result still exceeds maxBytes, do final truncation
+        if (result.size() > maxBytes) {
+            result = document->applyFinalTruncation(result, maxBytes);
+            document->markAsTruncated();
+        }
+
+        if (document->isTruncated()) {
+            result += "\n[CONTENT_TRUNCATED]";
+        }
+
+        return result;
+    } catch (const std::logic_error &error) {
+        std::cout << error.what() << std::endl;
+    } catch (...) {
+        std::cerr << "Parse failed: " << filename << std::endl;
+    }
+
+    return {};
+}
+
+/**
+ * @brief Convert file with truncation support
+ * @param filename Path to the file
+ * @param maxBytes Maximum bytes to process
+ * @return Converted text content (potentially truncated)
+ */
+static std::string doConvertFileWithTruncation(const std::string &filename, size_t maxBytes)
+{
+    std::string suffix = extractFileExtension(filename);
+    if (suffix.empty()) {
+        return {};
+    }
+
+    // Try converting with the original suffix first
+    std::string content = tryConvertWithTruncation(filename, suffix, maxBytes);
+    if (!content.empty()) {
+        return content;
+    }
+
+    // If content is empty, try similar extensions
+    static const std::unordered_map<std::string, std::string> similarExtensionMap = createSimilarExtensionMap();
+    auto it = similarExtensionMap.find(suffix);
+    if (it != similarExtensionMap.end()) {
+        return tryConvertWithTruncation(filename, it->second, maxBytes);
+    }
+
+    return {};
 }
 
 std::string DocParser::convertFile(const std::string &filename)
 {
-    std::string suffix = filename.substr(filename.find_last_of('.') + 1);
-    if (suffix.empty())
+    std::string suffix = extractFileExtension(filename);
+    if (suffix.empty()) {
         return {};
+    }
 
-    // 已解析出内容，直接返回结果
-    const auto &content { doConvertFile(filename, suffix) };
+    // 尝试使用原始后缀解析
+    std::string content = doConvertFile(filename, suffix);
     if (!content.empty())
         return content;
 
-    // 对于解析失败的情况，再进行相似后缀的尝试
-    // doc <-> docx
-    if (!strcasecmp(suffix.c_str(), "doc"))
-        return doConvertFile(filename, "docx");
-    if (!strcasecmp(suffix.c_str(), "docx"))
-        return doConvertFile(filename, "doc");
+    // 尝试相似后缀
+    static const std::unordered_map<std::string, std::string> similarExtensionMap = createSimilarExtensionMap();
 
-    // xls <-> xlsx
-    if (!strcasecmp(suffix.c_str(), "xls"))
-        return doConvertFile(filename, "xlsx");
-    if (!strcasecmp(suffix.c_str(), "xlsx"))
-        return doConvertFile(filename, "xls");
-
-    // ppt <-> pptx
-    if (!strcasecmp(suffix.c_str(), "ppt"))
-        return doConvertFile(filename, "pptx");
-    if (!strcasecmp(suffix.c_str(), "pptx"))
-        return doConvertFile(filename, "ppt");
+    auto it = similarExtensionMap.find(suffix);
+    if (it != similarExtensionMap.end()) {
+        return doConvertFile(filename, it->second);
+    }
 
     return {};
+}
+
+std::string DocParser::convertFile(const std::string &filename, size_t maxBytes)
+{
+    // Quick check for small files - use original path for maximum compatibility
+    if (isSmallFile(filename, maxBytes)) {
+        return convertFile(filename);
+    }
+
+    // Use truncation processing for all other cases
+    return doConvertFileWithTruncation(filename, maxBytes);
 }

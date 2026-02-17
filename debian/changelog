@@ -1,3 +1,58 @@
+docparser (1.0.25) unstable; urgency=medium
+
+  * add ET file format support
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Mon, 01 Dec 2025 09:11:51 +0800
+
+docparser (1.0.24) unstable; urgency=medium
+
+  * improve file conversion fallback logic for truncated files
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Fri, 28 Nov 2025 16:14:02 +0800
+
+docparser (1.0.23) unstable; urgency=medium
+
+  * add defensive checks in excel formula evaluation
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Thu, 27 Nov 2025 17:22:05 +0800
+
+docparser (1.0.22) unstable; urgency=medium
+
+  * enhance error handling in formula evaluation
+
+ -- liujinchang <liujinchang@uniontech.com>  Tue, 05 Aug 2025 19:35:19 +0800
+
+docparser (1.0.21) unstable; urgency=medium
+
+  * enhance CMake configuration for libmagic dependency handling
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Thu, 26 Jun 2025 12:49:21 +0800
+
+docparser (1.0.20) unstable; urgency=medium
+
+  *  implement truncation functionality in document parser
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Tue, 24 Jun 2025 14:14:45 +0800
+
+docparser (1.0.19) unstable; urgency=medium
+
+  * integrate libmagic for MIME type detection in docparser
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Mon, 26 May 2025 14:21:27 +0800
+
+docparser (1.0.18) unstable; urgency=medium
+
+  * refactor
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Thu, 22 May 2025 08:28:35 +0800
+
+docparser (1.0.17) unstable; urgency=medium
+
+  * add tests
+  * refactor
+
+ -- Zhang Sheng <zhangsheng@uniontech.com>  Mon, 24 Mar 2025 17:28:27 +0800
+
 docparser (1.0.16) unstable; urgency=medium
 
   * remove symbol visibility settings
@@ -13,7 +68,7 @@ docparser (1.0.15) unstable; urgency=medium
 docparser (1.0.14) unstable; urgency=medium
 
   * fix bug
-  * 
+  *
 
  -- Zhang Sheng <zhangsheng@uniontech.com>  Tue, 07 Jan 2025 13:04:28 +0800
 
