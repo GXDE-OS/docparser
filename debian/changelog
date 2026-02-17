@@ -1,3 +1,9 @@
+docparser (1.0.25gxde1) UNRELEASED; urgency=medium
+
+  * fix(cmake): drop -pie from global link options
+
+ -- gfdgd_xi <3025613752@qq.com>  Tue, 17 Feb 2026 12:23:29 +0800
+
 docparser (1.0.25) unstable; urgency=medium
 
   * add ET file format support
